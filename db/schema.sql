@@ -9,11 +9,13 @@ create table if not exists notes (
   score numeric,
   score_reason text,
   keywords jsonb,
+  error_message text,
   created_at timestamptz not null default now()
 );
 
 alter table notes drop constraint if exists notes_status_check;
 alter table notes add constraint notes_status_check check (status in ('pending', 'scored', 'rejected', 'drafted', 'error'));
+alter table notes add column if not exists error_message text;
 
 create table if not exists drafts (
   id uuid primary key default gen_random_uuid(),

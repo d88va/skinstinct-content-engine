@@ -10,7 +10,7 @@ export async function GET(req: NextRequest) {
   }
 
   const { rows: notes } = await sql`
-    select id, status, score, score_reason, keywords, left(raw_text, 80) as raw_text_preview, created_at
+    select id, status, score, score_reason, keywords, error_message, left(raw_text, 80) as raw_text_preview, created_at
     from notes order by created_at desc limit 5
   `;
   const { rows: drafts } = await sql`

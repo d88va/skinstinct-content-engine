@@ -27,18 +27,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: true });
   }
 
-  try {
-    await handleNewNote(message.chat.id, message.message_id, message.text);
-  } catch (err) {
-    console.error('handleNewNote failed', err);
-    await sql`update notes set status = 'error' where telegram_message_id = ${message.message_id}`.catch(() => {});
-    await sendTelegramMessage(
-      message.chat.id,
-      'Something went wrong processing this note. Check the Vercel logs.',
-      message.message_id
-    ).catch((sendErr) => console.error('Failed to send error notice', sendErr));
-  }
-
+  await handleNewNote(message.chat.id, message.message_id, message.text);
   return NextResponse.json({ ok: true });
 }
 
@@ -67,39 +56,52 @@ async function handleNewNote(chatId: number, telegramMessageId: number, rawText:
     return;
   }
 
-  const scoreResult = await scoreNote(rawText);
+  try {
+    const scoreResult = await scoreNote(rawText);
 
-  await sql`
-    update notes
-    set status = ${scoreResult.pass ? 'scored' : 'rejected'},
-        score = ${scoreResult.score},
-        score_reason = ${scoreResult.reason},
-        keywords = ${JSON.stringify(scoreResult.keywords)}::jsonb
-    where id = ${noteId}
-  `;
+    await sql`
+      update notes
+      set status = ${scoreResult.pass ? 'scored' : 'rejected'},
+          score = ${scoreResult.score},
+          score_reason = ${scoreResult.reason},
+          keywords = ${JSON.stringify(scoreResult.keywords)}::jsonb
+      where id = ${noteId}
+    `;
 
-  if (!scoreResult.pass) {
-    await sendTelegramMessage(
+    if (!scoreResult.pass) {
+      await sendTelegramMessage(
+        chatId,
+        `Rejected (${scoreResult.score}/10): ${scoreResult.reason}`,
+        telegramMessageId
+      );
+      return;
+    }
+
+    const newsAngle = await findNewsAngle(rawText, scoreResult.keywords);
+    const { content, model } = await generateDraft(rawText, newsAngle);
+
+    const sent = await sendTelegramMessage(
       chatId,
-      `Rejected (${scoreResult.score}/10): ${scoreResult.reason}`,
+      `${content}\n\n—\nReply APPROVE or REJECT to this message.`,
       telegramMessageId
     );
-    return;
+
+    await sql`
+      insert into drafts (note_id, content, news_angle, model, telegram_message_id, status)
+      values (${noteId}, ${content}, ${newsAngle}, ${model}, ${sent.message_id}, 'pending')
+    `;
+
+    await sql`update notes set status = 'drafted' where id = ${noteId}`;
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.error('handleNewNote failed', err);
+    await sql`update notes set status = 'error', error_message = ${message} where id = ${noteId}`.catch((dbErr) =>
+      console.error('Failed to record error on note', dbErr)
+    );
+    await sendTelegramMessage(
+      chatId,
+      'Something went wrong processing this note. Check the Vercel logs.',
+      telegramMessageId
+    ).catch((sendErr) => console.error('Failed to send error notice', sendErr));
   }
-
-  const newsAngle = await findNewsAngle(rawText, scoreResult.keywords);
-  const { content, model } = await generateDraft(rawText, newsAngle);
-
-  const sent = await sendTelegramMessage(
-    chatId,
-    `${content}\n\n—\nReply APPROVE or REJECT to this message.`,
-    telegramMessageId
-  );
-
-  await sql`
-    insert into drafts (note_id, content, news_angle, model, telegram_message_id, status)
-    values (${noteId}, ${content}, ${newsAngle}, ${model}, ${sent.message_id}, 'pending')
-  `;
-
-  await sql`update notes set status = 'drafted' where id = ${noteId}`;
 }
