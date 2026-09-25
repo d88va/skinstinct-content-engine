@@ -1,4 +1,4 @@
-import { Pool, type QueryResult } from 'pg';
+import { Pool } from 'pg';
 
 // @vercel/postgres only auto-enables SSL for its own vercel-storage.com hosts.
 // This project's Postgres is a Supabase-backed store connected via Vercel's
@@ -20,13 +20,13 @@ async function sqlTag<T = any>(strings: TemplateStringsArray, ...values: unknown
     params.push(value);
     text += `$${i + 1}${strings[i + 1]}`;
   });
-  const result: QueryResult<T> = await pool.query(text, params);
-  return { rows: result.rows };
+  const result = await pool.query(text, params);
+  return { rows: result.rows as T[] };
 }
 
 sqlTag.query = async <T = any>(text: string): Promise<SqlResult<T>> => {
-  const result: QueryResult<T> = await pool.query(text);
-  return { rows: result.rows };
+  const result = await pool.query(text);
+  return { rows: result.rows as T[] };
 };
 
 export const sql = sqlTag;
