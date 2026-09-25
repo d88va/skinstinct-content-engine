@@ -3,10 +3,23 @@ import { Pool } from 'pg';
 // @vercel/postgres only auto-enables SSL for its own vercel-storage.com hosts.
 // This project's Postgres is a Supabase-backed store connected via Vercel's
 // marketplace integration, and Supabase's Postgres requires SSL — so we talk
-// to it directly with `pg` and force SSL explicitly instead.
+// to it directly with `pg` instead.
+//
+// pg's connection-string parser reads any sslmode query param in the URL and
+// that overrides an explicit `ssl` option passed alongside `connectionString`
+// (a known pg gotcha), so a plain `ssl: { rejectUnauthorized: false }` object
+// gets silently ignored when the URL already carries sslmode=require and
+// still fails on Supabase's self-signed chain. Forcing sslmode=no-verify
+// directly into the URL sidesteps that override entirely.
+function connectionStringWithNoVerifySsl(urlStr: string | undefined): string | undefined {
+  if (!urlStr) return urlStr;
+  const url = new URL(urlStr);
+  url.searchParams.set('sslmode', 'no-verify');
+  return url.toString();
+}
+
 const pool = new Pool({
-  connectionString: process.env.POSTGRES_URL,
-  ssl: { rejectUnauthorized: false },
+  connectionString: connectionStringWithNoVerifySsl(process.env.POSTGRES_URL),
 });
 
 type SqlResult<T = any> = { rows: T[] };
