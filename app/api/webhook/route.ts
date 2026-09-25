@@ -27,7 +27,18 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: true });
   }
 
-  await handleNewNote(message.chat.id, message.message_id, message.text);
+  try {
+    await handleNewNote(message.chat.id, message.message_id, message.text);
+  } catch (err) {
+    console.error('handleNewNote failed', err);
+    await sql`update notes set status = 'error' where telegram_message_id = ${message.message_id}`.catch(() => {});
+    await sendTelegramMessage(
+      message.chat.id,
+      'Something went wrong processing this note. Check the Vercel logs.',
+      message.message_id
+    ).catch((sendErr) => console.error('Failed to send error notice', sendErr));
+  }
+
   return NextResponse.json({ ok: true });
 }
 

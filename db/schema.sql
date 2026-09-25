@@ -5,12 +5,15 @@ create table if not exists notes (
   telegram_message_id bigint not null,
   telegram_chat_id bigint not null,
   raw_text text not null,
-  status text not null default 'pending' check (status in ('pending', 'scored', 'rejected', 'drafted')),
+  status text not null default 'pending' check (status in ('pending', 'scored', 'rejected', 'drafted', 'error')),
   score numeric,
   score_reason text,
   keywords jsonb,
   created_at timestamptz not null default now()
 );
+
+alter table notes drop constraint if exists notes_status_check;
+alter table notes add constraint notes_status_check check (status in ('pending', 'scored', 'rejected', 'drafted', 'error'));
 
 create table if not exists drafts (
   id uuid primary key default gen_random_uuid(),
